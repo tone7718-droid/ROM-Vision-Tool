@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {JOINTS,Measurement,angle3,clinicalAngle,assessPose,STORE,LEGACY_STORE,loadRecords,writeRecords,makeRecord,comparable,parseBackup,mergeRecords,csv} from '../core.js';
+import {JOINTS,Measurement,angle3,clinicalAngle,assessPose,STORE,LEGACY_STORE,loadRecords,loadRecordsDetailed,writeRecords,makeRecord,comparable,parseBackup,mergeRecords,csv} from '../core.js';
 const context={patient:'P001',posture:'standing',mode:'active',target:135};
 const record=(id='r1')=>({id,t:100,j:'kneeR',min:10,max:110,rom:100,c:0,frames:60,angleKind:'clinical-v2',context:{...context}});
 const memory=()=>{const map=new Map();return {getItem:k=>map.get(k)??null,setItem:(k,v)=>map.set(k,v)};};
@@ -81,4 +81,52 @@ test('unsupported posture flags are stored as unavailable rather than zero',()=>
   assert.equal(makeRecord(m,context,'kneeR','a').c,null);
   assert.equal(makeRecord(m,{...context,posture:'supine'},'hipR','b').c,null);
   assert.equal(makeRecord(m,context,'hipR','c').c,0);
+});
+
+test('periodic unconfirmed spikes do not discard an ongoing hold',()=>{
+  const m=new Measurement();let accepted=0;
+  for(let t=0;t<3000;t+=33)if(m.sample(t%400<33?60:10,t).accepted)accepted++;
+  assert.ok(accepted>0);assert.ok(Math.abs(m.session.min-10)<.001);assert.ok(Math.abs(m.session.max-10)<.001);
+});
+test('a confirmed jump (three consistent frames) still re-acquires at the new angle',()=>{
+  const m=new Measurement();hold(m,10,0);let t=840;
+  for(let i=0;i<3;i++,t+=40)m.sample(100,t);
+  assert.ok(Math.abs(m.sample(100,t).angle-100)<.001);
+});
+test('below the minimum frame rate no endpoint can be recorded',()=>{
+  for(const [fps,expect] of [[4,false],[6,true]]){const m=new Measurement();for(let t=0;t<3000;t+=1000/fps)m.sample(10,t);assert.equal(Number.isFinite(m.session.min),expect);}
+});
+function sideLandmarks(farVisibility) {
+  const lm=Array.from({length:33},()=>({x:.5,y:.5,visibility:1}));
+  lm[12]={x:.5,y:.2,visibility:1};lm[11]={x:.52,y:.2,visibility:farVisibility};
+  lm[24]={x:.5,y:.6,visibility:1};lm[23]={x:.52,y:.6,visibility:farVisibility};
+  lm[26]={x:.5,y:.75,visibility:1};lm[28]={x:.5,y:.9,visibility:1};
+  return lm;
+}
+test('side view tolerates an occluded far-side torso but not an occluded measured point',()=>{
+  assert.equal(assessPose(sideLandmarks(.4),JOINTS.kneeR,960,720).valid,true);
+  assert.equal(assessPose(sideLandmarks(.1),JOINTS.kneeR,960,720).valid,false);
+  const lm=sideLandmarks(1);lm[26].visibility=.5;assert.equal(assessPose(lm,JOINTS.kneeR,960,720).valid,false);
+});
+test('oblique side view is measured but warned',()=>{
+  const lm=sideLandmarks(1);lm[11]={x:.6,y:.2,visibility:1};
+  const pose=assessPose(lm,JOINTS.kneeR,960,720);assert.equal(pose.valid,true);assert.match(pose.warning,/비스듬/);
+  assert.equal(assessPose(sideLandmarks(1),JOINTS.kneeR,960,720).warning,null);
+});
+test('legacy migration keeps readable records, skips broken ones and marks posture flag unavailable',()=>{
+  const storage=memory();storage.setItem(LEGACY_STORE,JSON.stringify([{t:10,j:'kneeR',min:45,max:180,rom:135},{t:11,j:'kneeR',min:'x'},null]));
+  const {records,legacySkipped}=loadRecordsDetailed(storage);
+  assert.equal(records.length,1);assert.equal(legacySkipped,2);assert.equal(records[0].c,null);assert.equal(records[0].id,'legacy-10-0');
+});
+test('merge treats records with different key order as identical',()=>{
+  const a=record(),reordered=Object.fromEntries(Object.entries(record()).reverse());reordered.context=Object.fromEntries(Object.entries(a.context).reverse());
+  assert.equal(mergeRecords([a],[reordered]).length,1);
+});
+test('validation names the offending field',()=>{
+  assert.throws(()=>parseBackup(JSON.stringify({schema:'romvision',version:2,records:[{...record(),min:'10'}]})),/1번째 기록의 최소각/);
+  assert.throws(()=>parseBackup('null'),/v2 백업/);
+});
+test('CSV neutralizes tab and carriage-return formula prefixes',()=>{
+  const a=record();a.context.patient='\t=1+1';assert.ok(csv([a]).includes('"\'\t=1+1"'));
+  a.context.patient='\r=1';assert.ok(csv([a]).includes('"\'\r=1"'));
 });

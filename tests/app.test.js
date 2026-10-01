@@ -64,11 +64,21 @@ test('corrupt storage blocks a restore instead of overwriting old bytes',async()
   assert.equal(map.get(STORE),'broken');assert.match($('historyNotice').textContent,/기록 읽기 실패/);
 });
 test('summary avoids recovery claims and reports unsupported posture flags explicitly',async()=>{
-  const {$}=await setup([r('a'),r('b')]);$('aiBtn').click();
-  assert.match($('aiBox').textContent,/미지원/);assert.match($('aiBox').textContent,/판정하지 않습니다/);
+  const {$}=await setup([r('a'),r('b')]);$('summaryBtn').click();
+  assert.match($('summaryBox').textContent,/미지원/);assert.match($('summaryBox').textContent,/판정하지 않습니다/);
 });
 
 test('camera without browser support fails clearly and leaves controls available',async()=>{
   const {$,alerts}=await setup([]);await $('startBtn').click();
   assert.match(alerts.at(-1),/카메라/);assert.equal($('patientId').disabled,false);assert.equal($('startBtn').disabled,false);
+});
+
+test('corrupt storage offers raw download and CSV explains the fault instead of claiming no records',async()=>{
+  const {$,map,alerts}=await setup([]);map.set(STORE,'broken');
+  $('csvBtn').click();assert.match(alerts.at(-1),/읽을 수 없어/);assert.equal($('rawBtn').hidden,false);
+});
+test('legacy records that cannot be read are reported in the history notice',async()=>{
+  const {$,map}=await setup([]);map.delete(STORE);map.set(LEGACY_STORE,JSON.stringify([{t:1,j:'kneeR',min:45,max:180,rom:135},{t:2}]));
+  $('patientId').value='x';$('patientId').onchange();
+  assert.match($('historyNotice').textContent,/읽을 수 없는 기존 기록 1개/);
 });

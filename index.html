@@ -4,16 +4,15 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>ROM Vision — 실시간 관절 가동범위 측정</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: mediastream:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'">
 <style>
   :root{
     --bg:#F5F7F6; --ink:#15292E; --ink-soft:#4A5E63;
     --line:#D8E0DE; --panel:#FFFFFF;
     --live:#0E8A6D; --live-dim:#DBEFE8;
     --warn:#D97A26; --stage:#0D1416;
-    --mono:'IBM Plex Mono',monospace; --sans:'IBM Plex Sans KR',sans-serif;
+    --mono:ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;
   }
   *{box-sizing:border-box;margin:0;padding:0}
   body{background:var(--bg);color:var(--ink);font-family:var(--sans);min-height:100vh}
@@ -108,7 +107,7 @@
 <body>
 
 <header>
-  <div class="brand"><h1>ROM Vision</h1><span>prototype v0.6 · on-device</span></div>
+  <div class="brand"><h1>ROM Vision</h1><span>prototype v0.7 · on-device</span></div>
   <div class="status"><span class="led" id="led"></span><span id="statusText" role="status">대기 중</span></div>
 </header>
 
@@ -124,7 +123,7 @@
       <label><input id="mirror" type="checkbox" checked /> 거울 화면</label>
     </div>
     <div class="placeholder" id="placeholder">
-      <p>카메라를 켜면 이 기기 안에서만 포즈를 분석합니다.<br>영상은 전송되지 않습니다. 모델·글꼴은 인터넷에서 불러옵니다.</p>
+      <p>카메라를 켜면 이 기기 안에서만 포즈를 분석합니다.<br>영상은 전송되지 않으며, 모델도 이 사이트에서 직접 불러옵니다.</p>
       <button class="primary" id="startBtn">카메라 시작</button>
     </div>
   </section>
@@ -163,11 +162,11 @@
       <div class="readout">
         <svg class="gauge" viewBox="0 0 100 100" aria-hidden="true">
           <path d="M 14 78 A 42 42 0 1 1 86 78" fill="none" stroke="#E4EAE8" stroke-width="9" stroke-linecap="round"/>
-          <path id="gaugeArc" d="M 14 78 A 42 42 0 1 1 86 78" fill="none" stroke="#0E8A6D"
-                stroke-width="9" stroke-linecap="round" stroke-dasharray="198" stroke-dashoffset="198"/>
+          <path id="gaugeArc" d="M 14 78 A 42 42 0 1 1 86 78" pathLength="100" fill="none" stroke="#0E8A6D"
+                stroke-width="9" stroke-linecap="round" stroke-dasharray="100" stroke-dashoffset="100"/>
         </svg>
         <div>
-          <div class="angle-num" id="angleNum">—<small>°</small></div>
+          <div class="angle-num"><span id="angleNum">—</span><small>°</small></div>
           <div class="angle-label" id="angleLabel">굴곡각 (펴짐 ≈ 0°)</div>
         </div>
       </div>
@@ -202,13 +201,14 @@
       <ul id="histList" style="list-style:none;margin-top:8px"></ul>
       <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <button class="ghost" id="csvBtn">CSV 내보내기</button>
-        <button class="ghost" id="aiBtn">기록 요약</button>
+        <button class="ghost" id="summaryBtn">기록 요약</button>
         <button class="ghost" id="backupBtn">JSON 백업</button>
         <button class="ghost" id="restoreBtn">백업 복원</button>
+        <button class="ghost" id="rawBtn" hidden>손상된 원본 다운로드</button>
         <input id="restoreFile" type="file" accept=".json,application/json" hidden />
         <span style="font-size:11px;color:var(--ink-soft)">기록은 이 기기에만 저장됩니다</span>
       </div>
-      <div id="aiBox" style="display:none;margin-top:10px;padding:12px 13px;border-radius:7px;
+      <div id="summaryBox" style="display:none;margin-top:10px;padding:12px 13px;border-radius:7px;
         background:#EEF3FB;color:#2A4365;font-size:13px;line-height:1.7;white-space:pre-wrap"></div>
     </div>
   </aside>
@@ -217,7 +217,7 @@
 <footer>
   본 도구는 임상 정확도가 검증되지 않은 2D 측정 프로토타입입니다. 무릎·팔꿈치·고관절 굴곡은 측면, 어깨 외전은 정면에서 촬영하세요.
   고관절은 골반 움직임을 분리하지 못하며, 몸통 기울임 표시는 단순 자세 확인 신호입니다. 통증·수술 후 제한이 있다면 담당 치료사가 정한 범위 안에서 측정하세요.
-  영상은 기기에서 처리합니다. 측정 기록과 환자 식별번호는 이 브라우저에 저장되며, 브라우저 데이터 삭제 시 사라질 수 있습니다. JSON 백업을 보관하세요.
+  영상과 포즈 모델은 기기에서 처리하며 외부 CDN·글꼴 서버를 사용하지 않습니다. 측정 기록과 환자 식별번호는 이 브라우저에 저장되며, 브라우저 데이터 삭제 시 사라질 수 있습니다. JSON 백업을 보관하세요.
 </footer>
 
 <script type="module" src="./app.js"></script>
